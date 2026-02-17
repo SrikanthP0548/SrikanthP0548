@@ -2,24 +2,36 @@ import { Msg, SessionStatus, type SessionRecord } from '../sw/messages.js';
 
 let currentSession: SessionRecord | null = null;
 let formDirty = false;
+let creatingSession = false;
+
+/* ---------- DOM element refs with init-time assertion ---------- */
+
+function getEl<T extends HTMLElement>(id: string): T {
+  const element = document.getElementById(id);
+  if (!element) throw new Error(`Popup init: missing element #${id}`);
+  return element as T;
+}
 
 const el = {
-  form: document.getElementById('metaForm') as HTMLFormElement,
-  tabInfo: document.getElementById('tabInfo') as HTMLElement,
-  title: document.getElementById('title') as HTMLInputElement,
-  description: document.getElementById('description') as HTMLTextAreaElement,
-  tags: document.getElementById('tags') as HTMLInputElement,
-  relatedComponents: document.getElementById('relatedComponents') as HTMLInputElement,
-  relatedFiles: document.getElementById('relatedFiles') as HTMLInputElement,
-  micDevice: document.getElementById('micDevice') as HTMLSelectElement,
-  startBtn: document.getElementById('startBtn') as HTMLButtonElement,
-  stopBtn: document.getElementById('stopBtn') as HTMLButtonElement,
-  pauseBtn: document.getElementById('pauseBtn') as HTMLButtonElement,
-  resumeBtn: document.getElementById('resumeBtn') as HTMLButtonElement,
-  status: document.getElementById('status') as HTMLElement,
-  stats: document.getElementById('stats') as HTMLElement,
-  recoveryNotice: document.getElementById('recoveryNotice') as HTMLElement
+  form: getEl<HTMLFormElement>('metaForm'),
+  tabInfo: getEl<HTMLElement>('tabInfo'),
+  title: getEl<HTMLInputElement>('title'),
+  description: getEl<HTMLTextAreaElement>('description'),
+  tags: getEl<HTMLInputElement>('tags'),
+  tagHint: getEl<HTMLElement>('tagHint'),
+  relatedComponents: getEl<HTMLInputElement>('relatedComponents'),
+  relatedFiles: getEl<HTMLInputElement>('relatedFiles'),
+  micDevice: getEl<HTMLSelectElement>('micDevice'),
+  startBtn: getEl<HTMLButtonElement>('startBtn'),
+  stopBtn: getEl<HTMLButtonElement>('stopBtn'),
+  pauseBtn: getEl<HTMLButtonElement>('pauseBtn'),
+  resumeBtn: getEl<HTMLButtonElement>('resumeBtn'),
+  status: getEl<HTMLElement>('status'),
+  stats: getEl<HTMLElement>('stats'),
+  recoveryNotice: getEl<HTMLElement>('recoveryNotice')
 };
+
+/* ---------- Helpers ---------- */
 
 function parseTags(raw: string): string[] {
   return raw.split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean);
@@ -40,7 +52,19 @@ function validate(): void {
   const descLen = el.description.value.trim().length;
   const descOk = descLen >= 20 && descLen <= 1000;
   const tags = parseTags(el.tags.value);
-  const tagsOk = tags.length >= 1 && tags.length <= 10 && tags.every((tag) => /^[a-z0-9-]{1,30}$/.test(tag));
+  const tagPattern = /^[a-z0-9-]{1,30}$/;
+  const tagsOk = tags.length >= 1 && tags.length <= 10 && tags.every((tag) => tagPattern.test(tag));
+
+  /* Show/hide tag validation hint */
+  const hasTagInput = el.tags.value.trim().length > 0;
+  if (hasTagInput && !tagsOk) {
+    el.tagHint.textContent = 'Tags must be lowercase alphanumeric, hyphen-separated (max 30 chars each, max 10 tags).';
+    el.tagHint.hidden = false;
+  } else {
+    el.tagHint.textContent = '';
+    el.tagHint.hidden = true;
+  }
+
   el.startBtn.disabled = !(titleOk && descOk && tagsOk);
 }
 
@@ -79,6 +103,8 @@ function updateUi(session: SessionRecord | null): void {
   el.resumeBtn.hidden = !paused;
 }
 
+/* ---------- Mic devices ---------- */
+
 async function loadMicDevices(): Promise<void> {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
@@ -95,6 +121,8 @@ async function loadMicDevices(): Promise<void> {
   }
 }
 
+/* ---------- State fetch (one-shot, no polling) ---------- */
+
 async function refresh(): Promise<void> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   el.tabInfo.textContent = `${tab?.title || ''}\n${tab?.url || ''}`;
@@ -106,17 +134,42 @@ async function refresh(): Promise<void> {
   validate();
 }
 
+/* ---------- Push-based state updates from service worker ---------- */
+
+chrome.runtime.onMessage.addListener((message: { type?: string; session?: SessionRecord }) => {
+  if (message?.type === Msg.SESSION_STATE_UPDATE) {
+    const session = (message.session as SessionRecord) || null;
+    if (!formDirty && session) hydrateFormFromSession(session);
+    updateUi(session);
+    validate();
+  }
+});
+
+/* ---------- Session management with race guard ---------- */
+
 async function ensureSession(): Promise<SessionRecord> {
   if (currentSession?.sessionId) return currentSession;
+  if (creatingSession) {
+    // Wait for the in-flight create to finish
+    while (creatingSession) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    if (currentSession?.sessionId) return currentSession;
+  }
 
-  const response = await chrome.runtime.sendMessage({
-    type: Msg.SESSION_CREATE_DRAFT,
-    sessionId: null,
-    payload: { metadata: metadataFromForm() }
-  });
+  creatingSession = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: Msg.SESSION_CREATE_DRAFT,
+      sessionId: null,
+      payload: { metadata: metadataFromForm() }
+    });
 
-  currentSession = response.session as SessionRecord;
-  return currentSession;
+    currentSession = response.session as SessionRecord;
+    return currentSession;
+  } finally {
+    creatingSession = false;
+  }
 }
 
 async function autosaveDraft(): Promise<void> {
@@ -130,16 +183,23 @@ async function autosaveDraft(): Promise<void> {
   formDirty = false;
 }
 
+/* ---------- Event listeners ---------- */
+
 el.form.addEventListener('input', () => {
   formDirty = true;
   validate();
 });
 
 el.startBtn.addEventListener('click', async () => {
-  const session = await ensureSession();
-  await autosaveDraft();
-  await chrome.runtime.sendMessage({ type: Msg.SESSION_START_REQUEST, sessionId: session.sessionId, payload: { micDeviceId: el.micDevice.value } });
-  await refresh();
+  el.startBtn.disabled = true;
+  try {
+    const session = await ensureSession();
+    await autosaveDraft();
+    await chrome.runtime.sendMessage({ type: Msg.SESSION_START_REQUEST, sessionId: session.sessionId, payload: { micDeviceId: el.micDevice.value } });
+    await refresh();
+  } finally {
+    validate(); // re-enable if still valid
+  }
 });
 
 el.stopBtn.addEventListener('click', async () => {
@@ -160,6 +220,7 @@ el.resumeBtn.addEventListener('click', async () => {
   await refresh();
 });
 
-setInterval(refresh, 500);
+/* ---------- Init ---------- */
+
 setInterval(autosaveDraft, 30000);
 void loadMicDevices().then(refresh);

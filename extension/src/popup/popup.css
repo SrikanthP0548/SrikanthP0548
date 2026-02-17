@@ -10,3 +10,4 @@ textarea { min-height: 70px; }
 #tabInfo { font-size: 11px; color: #666; margin-bottom: 8px; word-break: break-all; }
 
 #recoveryNotice { margin-top: 4px; font-size: 11px; color: #b26a00; }
+.hint { display: block; font-size: 11px; color: #c62828; margin-top: 2px; }

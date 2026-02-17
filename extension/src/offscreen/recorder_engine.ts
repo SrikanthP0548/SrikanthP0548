@@ -18,6 +18,7 @@ export class RecorderEngine {
   private recorder: MediaRecorder | null = null;
   private stream: MediaStream | null = null;
   private micStream: MediaStream | null = null;
+  private stopped = false;
   private chunkIndex = 0;
 
   constructor(private readonly callbacks: RecorderCallbacks) {}
@@ -42,6 +43,7 @@ export class RecorderEngine {
 
   async start(opts: RecorderOptions): Promise<boolean> {
     try {
+      this.stopped = false;
       this.chunkIndex = 0;
       const tabStream = await this.captureTabFromStreamId(opts.tabStreamId);
       let micTrack: MediaStreamTrack | null = null;
@@ -94,6 +96,7 @@ export class RecorderEngine {
   }
 
   setMute(muted: boolean): void {
+    if (this.stopped) return;
     const micTrack = this.micStream?.getAudioTracks()[0];
     if (micTrack) micTrack.enabled = !muted;
   }
@@ -107,6 +110,7 @@ export class RecorderEngine {
   }
 
   private stopTracks(): void {
+    this.stopped = true;
     this.stream?.getTracks().forEach((track) => track.stop());
     this.micStream?.getTracks().forEach((track) => track.stop());
   }
