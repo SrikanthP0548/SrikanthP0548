@@ -1,10 +1,7 @@
-// @ts-nocheck
 export class LocalHttpUploadProvider {
-  constructor(baseUrl = 'http://localhost:4000') {
-    this.baseUrl = baseUrl;
-  }
+  constructor(private readonly baseUrl = 'http://localhost:4000') {}
 
-  async init(session) {
+  async init(session: unknown): Promise<void> {
     await fetch(`${this.baseUrl}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -12,14 +9,14 @@ export class LocalHttpUploadProvider {
     });
   }
 
-  async pushChunk(sessionId, chunkIndex, blob) {
+  async pushChunk(sessionId: string, chunkIndex: number, blob: Blob): Promise<void> {
     await fetch(`${this.baseUrl}/sessions/${sessionId}/chunks?chunkIndex=${chunkIndex}`, {
       method: 'POST',
       body: blob
     });
   }
 
-  async finalize(sessionId, manifest) {
+  async finalize(sessionId: string, manifest: unknown): Promise<unknown> {
     const resp = await fetch(`${this.baseUrl}/sessions/${sessionId}/finalize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

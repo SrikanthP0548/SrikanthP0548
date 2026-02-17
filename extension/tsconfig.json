@@ -4,10 +4,12 @@
     "module": "ES2022",
     "moduleResolution": "Bundler",
     "lib": ["ES2022", "DOM"],
-    "strict": false,
+    "strict": true,
     "noEmitOnError": true,
     "skipLibCheck": true,
-    "allowJs": false
+    "allowJs": false,
+    "outDir": "dist",
+    "rootDir": "src"
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts"]
 }

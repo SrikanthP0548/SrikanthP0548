@@ -1,32 +1,28 @@
-// @ts-nocheck
-import { Msg, SessionStatus } from '../sw/messages.js';
+import { Msg, SessionStatus, type SessionRecord } from '../sw/messages.js';
 
-let currentSession = null;
+let currentSession: SessionRecord | null = null;
 let formDirty = false;
 
 const el = {
-  form: document.getElementById('metaForm'),
-  tabInfo: document.getElementById('tabInfo'),
-  title: document.getElementById('title'),
-  description: document.getElementById('description'),
-  tags: document.getElementById('tags'),
-  relatedComponents: document.getElementById('relatedComponents'),
-  relatedFiles: document.getElementById('relatedFiles'),
-  micDevice: document.getElementById('micDevice'),
-  startBtn: document.getElementById('startBtn'),
-  stopBtn: document.getElementById('stopBtn'),
-  pauseBtn: document.getElementById('pauseBtn'),
-  resumeBtn: document.getElementById('resumeBtn'),
-  status: document.getElementById('status'),
-  stats: document.getElementById('stats'),
-  recoveryNotice: document.getElementById('recoveryNotice')
+  form: document.getElementById('metaForm') as HTMLFormElement,
+  tabInfo: document.getElementById('tabInfo') as HTMLElement,
+  title: document.getElementById('title') as HTMLInputElement,
+  description: document.getElementById('description') as HTMLTextAreaElement,
+  tags: document.getElementById('tags') as HTMLInputElement,
+  relatedComponents: document.getElementById('relatedComponents') as HTMLInputElement,
+  relatedFiles: document.getElementById('relatedFiles') as HTMLInputElement,
+  micDevice: document.getElementById('micDevice') as HTMLSelectElement,
+  startBtn: document.getElementById('startBtn') as HTMLButtonElement,
+  stopBtn: document.getElementById('stopBtn') as HTMLButtonElement,
+  pauseBtn: document.getElementById('pauseBtn') as HTMLButtonElement,
+  resumeBtn: document.getElementById('resumeBtn') as HTMLButtonElement,
+  status: document.getElementById('status') as HTMLElement,
+  stats: document.getElementById('stats') as HTMLElement,
+  recoveryNotice: document.getElementById('recoveryNotice') as HTMLElement
 };
 
-function parseTags(raw) {
-  return raw
-    .split(',')
-    .map((tag) => tag.trim().toLowerCase())
-    .filter(Boolean);
+function parseTags(raw: string): string[] {
+  return raw.split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean);
 }
 
 function metadataFromForm() {
@@ -39,7 +35,7 @@ function metadataFromForm() {
   };
 }
 
-function validate() {
+function validate(): void {
   const titleOk = el.title.value.trim().length >= 5 && el.title.value.trim().length <= 200;
   const descLen = el.description.value.trim().length;
   const descOk = descLen >= 20 && descLen <= 1000;
@@ -48,8 +44,8 @@ function validate() {
   el.startBtn.disabled = !(titleOk && descOk && tagsOk);
 }
 
-function hydrateFormFromSession(session) {
-  const metadata = session?.metadata || {};
+function hydrateFormFromSession(session: SessionRecord | null): void {
+  const metadata = session?.metadata || { title: '', description: '', tags: [] };
   el.title.value = metadata.title || '';
   el.description.value = metadata.description || '';
   el.tags.value = (metadata.tags || []).join(',');
@@ -58,7 +54,7 @@ function hydrateFormFromSession(session) {
   if (session?.audio?.micDeviceId) el.micDevice.value = session.audio.micDeviceId;
 }
 
-function updateUi(session) {
+function updateUi(session: SessionRecord | null): void {
   currentSession = session;
   if (!session) {
     el.status.textContent = 'Status: IDLE';
@@ -77,47 +73,40 @@ function updateUi(session) {
 
   const recording = session.status === SessionStatus.RECORDING;
   const paused = session.status === SessionStatus.PAUSED;
-
   el.startBtn.hidden = recording || paused;
   el.stopBtn.hidden = !(recording || paused);
   el.pauseBtn.hidden = !recording;
   el.resumeBtn.hidden = !paused;
 }
 
-async function loadMicDevices() {
+async function loadMicDevices(): Promise<void> {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
-    const microphones = devices.filter((device) => device.kind === 'audioinput');
-    el.micDevice.innerHTML = '';
-
-    const fallback = document.createElement('option');
-    fallback.value = 'default';
-    fallback.textContent = 'Default microphone';
-    el.micDevice.appendChild(fallback);
-
+    const microphones = devices.filter((d) => d.kind === 'audioinput');
+    el.micDevice.innerHTML = '<option value="default">Default microphone</option>';
     microphones.forEach((microphone) => {
       const option = document.createElement('option');
       option.value = microphone.deviceId;
       option.textContent = microphone.label || `Microphone ${el.micDevice.length}`;
       el.micDevice.appendChild(option);
     });
-  } catch (_error) {
+  } catch {
     el.micDevice.innerHTML = '<option value="default">Microphone unavailable</option>';
   }
 }
 
-async function refresh() {
+async function refresh(): Promise<void> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   el.tabInfo.textContent = `${tab?.title || ''}\n${tab?.url || ''}`;
 
   const response = await chrome.runtime.sendMessage({ type: Msg.POPUP_GET_STATUS, sessionId: null, payload: {} });
-  if (response?.session && !formDirty) hydrateFormFromSession(response.session);
+  if (response?.session && !formDirty) hydrateFormFromSession(response.session as SessionRecord);
 
-  updateUi(response?.session || null);
+  updateUi((response?.session as SessionRecord) || null);
   validate();
 }
 
-async function ensureSession() {
+async function ensureSession(): Promise<SessionRecord> {
   if (currentSession?.sessionId) return currentSession;
 
   const response = await chrome.runtime.sendMessage({
@@ -126,13 +115,12 @@ async function ensureSession() {
     payload: { metadata: metadataFromForm() }
   });
 
-  currentSession = response.session;
+  currentSession = response.session as SessionRecord;
   return currentSession;
 }
 
-async function autosaveDraft() {
-  if (!currentSession?.sessionId) return;
-  if (!formDirty) return;
+async function autosaveDraft(): Promise<void> {
+  if (!currentSession?.sessionId || !formDirty) return;
 
   await chrome.runtime.sendMessage({
     type: Msg.SESSION_UPDATE_METADATA,
@@ -150,11 +138,7 @@ el.form.addEventListener('input', () => {
 el.startBtn.addEventListener('click', async () => {
   const session = await ensureSession();
   await autosaveDraft();
-  await chrome.runtime.sendMessage({
-    type: Msg.SESSION_START_REQUEST,
-    sessionId: session.sessionId,
-    payload: { micDeviceId: el.micDevice.value }
-  });
+  await chrome.runtime.sendMessage({ type: Msg.SESSION_START_REQUEST, sessionId: session.sessionId, payload: { micDeviceId: el.micDevice.value } });
   await refresh();
 });
 
@@ -178,4 +162,4 @@ el.resumeBtn.addEventListener('click', async () => {
 
 setInterval(refresh, 500);
 setInterval(autosaveDraft, 30000);
-loadMicDevices().then(refresh);
+void loadMicDevices().then(refresh);

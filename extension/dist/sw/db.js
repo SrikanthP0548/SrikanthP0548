@@ -1,4 +1,3 @@
-// @ts-nocheck
 const DB_NAME = 'logix_recorder_v1';
 const DB_VERSION = 1;
 export const stores = {
@@ -7,7 +6,7 @@ export const stores = {
     annotations: 'annotations',
     drafts: 'drafts'
 };
-let dbPromise;
+let dbPromise = null;
 export function getDB() {
     if (dbPromise)
         return dbPromise;
@@ -15,18 +14,14 @@ export function getDB() {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
         req.onupgradeneeded = () => {
             const db = req.result;
-            if (!db.objectStoreNames.contains(stores.sessions)) {
+            if (!db.objectStoreNames.contains(stores.sessions))
                 db.createObjectStore(stores.sessions, { keyPath: 'sessionId' });
-            }
-            if (!db.objectStoreNames.contains(stores.chunks)) {
+            if (!db.objectStoreNames.contains(stores.chunks))
                 db.createObjectStore(stores.chunks, { keyPath: ['sessionId', 'chunkIndex'] });
-            }
-            if (!db.objectStoreNames.contains(stores.annotations)) {
+            if (!db.objectStoreNames.contains(stores.annotations))
                 db.createObjectStore(stores.annotations, { keyPath: 'annotationId' });
-            }
-            if (!db.objectStoreNames.contains(stores.drafts)) {
+            if (!db.objectStoreNames.contains(stores.drafts))
                 db.createObjectStore(stores.drafts, { keyPath: 'draftId' });
-            }
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
@@ -71,9 +66,7 @@ export async function getAll(store) {
 }
 export async function getAllChunksForSession(sessionId) {
     const all = await getAll(stores.chunks);
-    return all
-        .filter((c) => c.sessionId === sessionId)
-        .sort((a, b) => a.chunkIndex - b.chunkIndex);
+    return all.filter((c) => c.sessionId === sessionId).sort((a, b) => a.chunkIndex - b.chunkIndex);
 }
 export async function getAnnotationsForSession(sessionId) {
     const all = await getAll(stores.annotations);

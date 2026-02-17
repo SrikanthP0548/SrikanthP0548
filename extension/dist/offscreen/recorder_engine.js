@@ -1,14 +1,11 @@
-// @ts-nocheck
 export class RecorderEngine {
-    constructor({ onChunk, onStarted, onStopped, onError }) {
-        this.onChunk = onChunk;
-        this.onStarted = onStarted;
-        this.onStopped = onStopped;
-        this.onError = onError;
-        this.recorder = null;
-        this.stream = null;
-        this.micStream = null;
-        this.chunkIndex = 0;
+    callbacks;
+    recorder = null;
+    stream = null;
+    micStream = null;
+    chunkIndex = 0;
+    constructor(callbacks) {
+        this.callbacks = callbacks;
     }
     async captureTabFromStreamId(tabStreamId) {
         return navigator.mediaDevices.getUserMedia({
@@ -31,20 +28,16 @@ export class RecorderEngine {
         try {
             this.chunkIndex = 0;
             const tabStream = await this.captureTabFromStreamId(opts.tabStreamId);
-            if (!tabStream)
-                throw new Error('Unable to capture tab stream from stream ID.');
             let micTrack = null;
             try {
                 this.micStream = await navigator.mediaDevices.getUserMedia({
-                    audio: opts.micDeviceId && opts.micDeviceId !== 'default'
-                        ? { deviceId: { exact: opts.micDeviceId } }
-                        : true,
+                    audio: opts.micDeviceId && opts.micDeviceId !== 'default' ? { deviceId: { exact: opts.micDeviceId } } : true,
                     video: false
                 });
                 micTrack = this.micStream.getAudioTracks()[0] || null;
             }
-            catch (_err) {
-                // microphone optional in MVP
+            catch {
+                micTrack = null;
             }
             const tracks = [...tabStream.getVideoTracks(), ...tabStream.getAudioTracks()];
             if (micTrack) {
@@ -57,18 +50,21 @@ export class RecorderEngine {
             this.recorder.ondataavailable = async (event) => {
                 if (!event.data || event.data.size <= 0)
                     return;
-                await this.onChunk({ chunkIndex: this.chunkIndex++, blob: event.data, ts: Date.now() });
+                await this.callbacks.onChunk({ sessionId: opts.sessionId, chunkIndex: this.chunkIndex++, blob: event.data, ts: Date.now() });
             };
-            this.recorder.onerror = (event) => this.onError(event.error?.message || 'MediaRecorder error');
-            this.recorder.onstart = () => this.onStarted();
-            this.recorder.onstop = () => {
+            this.recorder.onerror = async (event) => this.callbacks.onError(opts.sessionId, event.error?.message || 'MediaRecorder error');
+            this.recorder.onstart = async () => this.callbacks.onStarted(opts.sessionId);
+            this.recorder.onstop = async () => {
                 this.stopTracks();
-                this.onStopped();
+                await this.callbacks.onStopped(opts.sessionId);
             };
             this.recorder.start(opts.chunkMs);
+            return true;
         }
         catch (error) {
-            this.onError(error.message || String(error));
+            await this.callbacks.onError(opts.sessionId, error instanceof Error ? error.message : String(error));
+            this.stopTracks();
+            return false;
         }
     }
     pause() {
@@ -80,7 +76,7 @@ export class RecorderEngine {
             this.recorder.resume();
     }
     setMute(muted) {
-        const micTrack = this.micStream?.getAudioTracks?.()[0];
+        const micTrack = this.micStream?.getAudioTracks()[0];
         if (micTrack)
             micTrack.enabled = !muted;
     }
@@ -90,7 +86,6 @@ export class RecorderEngine {
             return;
         }
         this.stopTracks();
-        this.onStopped();
     }
     stopTracks() {
         this.stream?.getTracks().forEach((track) => track.stop());

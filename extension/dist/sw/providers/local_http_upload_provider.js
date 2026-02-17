@@ -1,5 +1,5 @@
-// @ts-nocheck
 export class LocalHttpUploadProvider {
+    baseUrl;
     constructor(baseUrl = 'http://localhost:4000') {
         this.baseUrl = baseUrl;
     }

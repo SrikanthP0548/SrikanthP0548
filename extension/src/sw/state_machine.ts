@@ -1,7 +1,6 @@
-// @ts-nocheck
-import { SessionStatus } from './messages.js';
+import { SessionStatus, type SessionRecord, type SessionStatusType } from './messages.js';
 
-const allowed = {
+const allowed: Record<SessionStatusType, SessionStatusType[]> = {
   [SessionStatus.IDLE]: [SessionStatus.DRAFT, SessionStatus.PREPARING],
   [SessionStatus.DRAFT]: [SessionStatus.PREPARING, SessionStatus.IDLE],
   [SessionStatus.PREPARING]: [SessionStatus.RECORDING, SessionStatus.ERROR],
@@ -15,14 +14,15 @@ const allowed = {
   [SessionStatus.ERROR]: [SessionStatus.IDLE, SessionStatus.READY_TO_EXPORT]
 };
 
-export function canTransition(from, to) {
+export function canTransition(from: SessionStatusType, to: SessionStatusType): boolean {
   return !!allowed[from]?.includes(to);
 }
 
-export function transition(session, nextStatus, patch = {}) {
+export function transition(session: SessionRecord, nextStatus: SessionStatusType, patch: Partial<SessionRecord> = {}): SessionRecord {
   if (session.status && !canTransition(session.status, nextStatus) && session.status !== nextStatus) {
     throw new Error(`Invalid transition ${session.status} -> ${nextStatus}`);
   }
+
   return {
     ...session,
     ...patch,

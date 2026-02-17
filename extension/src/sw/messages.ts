@@ -1,4 +1,3 @@
-// @ts-nocheck
 export const Msg = {
   POPUP_GET_STATUS: 'POPUP_GET_STATUS',
   SESSION_CREATE_DRAFT: 'SESSION_CREATE_DRAFT',
@@ -10,6 +9,7 @@ export const Msg = {
 
   ANNOTATION_ADD: 'ANNOTATION_ADD',
   OVERLAY_READY: 'OVERLAY_READY',
+  SESSION_STATE_UPDATE: 'SESSION_STATE_UPDATE',
 
   OFFSCREEN_START_CAPTURE: 'OFFSCREEN_START_CAPTURE',
   OFFSCREEN_STOP_CAPTURE: 'OFFSCREEN_STOP_CAPTURE',
@@ -22,7 +22,7 @@ export const Msg = {
   RECORDING_CHUNK: 'RECORDING_CHUNK',
   RECORDING_STOPPED: 'RECORDING_STOPPED',
   RECORDING_ERROR: 'RECORDING_ERROR'
-};
+} as const;
 
 export const SessionStatus = {
   IDLE: 'IDLE',
@@ -36,4 +36,31 @@ export const SessionStatus = {
   EXPORTING: 'EXPORTING',
   COMPLETED: 'COMPLETED',
   ERROR: 'ERROR'
-};
+} as const;
+
+export type SessionStatusType = (typeof SessionStatus)[keyof typeof SessionStatus];
+
+export interface SessionRecord {
+  sessionId: string;
+  createdAt: number;
+  updatedAt: number;
+  status: SessionStatusType;
+  activeTabId: number | null;
+  tabTitle: string;
+  tabUrl: string;
+  metadata: {
+    title: string;
+    description: string;
+    tags: string[];
+    relatedComponents?: string;
+    relatedFiles?: string;
+  };
+  audio: { micDeviceId: string; muted: boolean };
+  video: { fps: number; mimeType: string; chunkMs: number };
+  stats: { chunkCount: number; bytesRecorded: number; durationMsApprox: number };
+  error: string | null;
+  recovered?: boolean;
+  recordingStartedAt: number | null;
+  warnedStorage?: boolean;
+  exportResult?: unknown;
+}

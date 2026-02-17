@@ -13,20 +13,21 @@
     "offscreen"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "http://*/*",
+    "https://*/*"
   ],
   "action": {
     "default_popup": "src/popup/popup.html",
     "default_title": "Logix Recorder"
   },
   "background": {
-    "service_worker": "src/sw/service_worker.js",
+    "service_worker": "dist/sw/service_worker.js",
     "type": "module"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["src/content/content.js"],
+      "js": ["dist/content/content.js"],
       "css": ["src/content/overlay.css"],
       "run_at": "document_idle"
     }

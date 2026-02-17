@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { SessionStatus } from './messages.js';
 const allowed = {
     [SessionStatus.IDLE]: [SessionStatus.DRAFT, SessionStatus.PREPARING],

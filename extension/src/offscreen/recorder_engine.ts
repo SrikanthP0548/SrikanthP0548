@@ -1,51 +1,59 @@
-// @ts-nocheck
-export class RecorderEngine {
-  constructor({ onChunk, onStarted, onStopped, onError }) {
-    this.onChunk = onChunk;
-    this.onStarted = onStarted;
-    this.onStopped = onStopped;
-    this.onError = onError;
-    this.recorder = null;
-    this.stream = null;
-    this.micStream = null;
-    this.chunkIndex = 0;
-  }
+export interface RecorderOptions {
+  sessionId: string;
+  tabStreamId: string;
+  micDeviceId: string;
+  muted: boolean;
+  chunkMs: number;
+  mimeType: string;
+}
 
-  async captureTabFromStreamId(tabStreamId) {
+interface RecorderCallbacks {
+  onChunk: (args: { sessionId: string; chunkIndex: number; blob: Blob; ts: number }) => Promise<void>;
+  onStarted: (sessionId: string) => Promise<void>;
+  onStopped: (sessionId: string) => Promise<void>;
+  onError: (sessionId: string, error: string) => Promise<void>;
+}
+
+export class RecorderEngine {
+  private recorder: MediaRecorder | null = null;
+  private stream: MediaStream | null = null;
+  private micStream: MediaStream | null = null;
+  private chunkIndex = 0;
+
+  constructor(private readonly callbacks: RecorderCallbacks) {}
+
+  private async captureTabFromStreamId(tabStreamId: string): Promise<MediaStream> {
     return navigator.mediaDevices.getUserMedia({
       audio: {
         mandatory: {
           chromeMediaSource: 'tab',
           chromeMediaSourceId: tabStreamId
         }
-      },
+      } as any,
       video: {
         mandatory: {
           chromeMediaSource: 'tab',
           chromeMediaSourceId: tabStreamId,
           maxFrameRate: 30
         }
-      }
+      } as any
     });
   }
 
-  async start(opts) {
+  async start(opts: RecorderOptions): Promise<boolean> {
     try {
       this.chunkIndex = 0;
       const tabStream = await this.captureTabFromStreamId(opts.tabStreamId);
-      if (!tabStream) throw new Error('Unable to capture tab stream from stream ID.');
+      let micTrack: MediaStreamTrack | null = null;
 
-      let micTrack = null;
       try {
         this.micStream = await navigator.mediaDevices.getUserMedia({
-          audio: opts.micDeviceId && opts.micDeviceId !== 'default'
-            ? { deviceId: { exact: opts.micDeviceId } }
-            : true,
+          audio: opts.micDeviceId && opts.micDeviceId !== 'default' ? { deviceId: { exact: opts.micDeviceId } } : true,
           video: false
         });
         micTrack = this.micStream.getAudioTracks()[0] || null;
-      } catch (_err) {
-        // microphone optional in MVP
+      } catch {
+        micTrack = null;
       }
 
       const tracks = [...tabStream.getVideoTracks(), ...tabStream.getAudioTracks()];
@@ -60,44 +68,45 @@ export class RecorderEngine {
 
       this.recorder.ondataavailable = async (event) => {
         if (!event.data || event.data.size <= 0) return;
-        await this.onChunk({ chunkIndex: this.chunkIndex++, blob: event.data, ts: Date.now() });
+        await this.callbacks.onChunk({ sessionId: opts.sessionId, chunkIndex: this.chunkIndex++, blob: event.data, ts: Date.now() });
       };
-      this.recorder.onerror = (event) => this.onError(event.error?.message || 'MediaRecorder error');
-      this.recorder.onstart = () => this.onStarted();
-      this.recorder.onstop = () => {
+      this.recorder.onerror = async (event) => this.callbacks.onError(opts.sessionId, event.error?.message || 'MediaRecorder error');
+      this.recorder.onstart = async () => this.callbacks.onStarted(opts.sessionId);
+      this.recorder.onstop = async () => {
         this.stopTracks();
-        this.onStopped();
+        await this.callbacks.onStopped(opts.sessionId);
       };
-
       this.recorder.start(opts.chunkMs);
+      return true;
     } catch (error) {
-      this.onError(error.message || String(error));
+      await this.callbacks.onError(opts.sessionId, error instanceof Error ? error.message : String(error));
+      this.stopTracks();
+      return false;
     }
   }
 
-  pause() {
+  pause(): void {
     if (this.recorder?.state === 'recording') this.recorder.pause();
   }
 
-  resume() {
+  resume(): void {
     if (this.recorder?.state === 'paused') this.recorder.resume();
   }
 
-  setMute(muted) {
-    const micTrack = this.micStream?.getAudioTracks?.()[0];
+  setMute(muted: boolean): void {
+    const micTrack = this.micStream?.getAudioTracks()[0];
     if (micTrack) micTrack.enabled = !muted;
   }
 
-  stop() {
+  stop(): void {
     if (this.recorder && this.recorder.state !== 'inactive') {
       this.recorder.stop();
       return;
     }
     this.stopTracks();
-    this.onStopped();
   }
 
-  stopTracks() {
+  private stopTracks(): void {
     this.stream?.getTracks().forEach((track) => track.stop());
     this.micStream?.getTracks().forEach((track) => track.stop());
   }

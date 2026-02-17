@@ -1,6 +1,5 @@
-// @ts-nocheck
-import { Msg, SessionStatus } from './messages.js';
-import { get, getAll, put, stores } from './db.js';
+import { Msg, SessionStatus, type SessionRecord } from './messages.js';
+import { get, getAll, put, stores, type AnnotationRecord, type ChunkRecord } from './db.js';
 import { getExportProvider } from './export_provider.js';
 import { transition } from './state_machine.js';
 
@@ -9,18 +8,18 @@ const MAX_LOCAL_BYTES = 2 * 1024 * 1024 * 1024;
 const WARN_LOCAL_BYTES = Math.floor(MAX_LOCAL_BYTES * 0.8);
 const MAX_DURATION_MS = 60 * 60 * 1000;
 
-let activeSessionId = null;
+let activeSessionId: string | null = null;
 
-function uuid() {
+function uuid(): string {
   return crypto.randomUUID();
 }
 
-async function getActiveTab() {
+async function getActiveTab(): Promise<any> {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   return tabs[0] || null;
 }
 
-async function ensureOffscreenDocument() {
+async function ensureOffscreenDocument(): Promise<void> {
   const has = await chrome.offscreen.hasDocument();
   if (has) return;
   await chrome.offscreen.createDocument({
@@ -30,21 +29,36 @@ async function ensureOffscreenDocument() {
   });
 }
 
-async function getSession(sessionId) {
-  return get(stores.sessions, sessionId);
+async function broadcastState(session: SessionRecord | null): Promise<void> {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(
+    tabs.map(async (tab: any) => {
+      if (!tab.id) return;
+      try {
+        await chrome.tabs.sendMessage(tab.id, { type: Msg.SESSION_STATE_UPDATE, sessionId: session?.sessionId || null, payload: { session } });
+      } catch {
+        // ignore tabs without content script context
+      }
+    })
+  );
 }
 
-async function saveSession(session) {
+async function getSession(sessionId: string): Promise<SessionRecord | undefined> {
+  return get<SessionRecord>(stores.sessions, sessionId);
+}
+
+async function saveSession(session: SessionRecord): Promise<void> {
   await put(stores.sessions, session);
-  const activeStatuses = [SessionStatus.RECORDING, SessionStatus.PAUSED, SessionStatus.PREPARING, SessionStatus.STOPPING];
+  const activeStatuses: string[] = [SessionStatus.RECORDING, SessionStatus.PAUSED, SessionStatus.PREPARING, SessionStatus.STOPPING];
   await chrome.storage.local.set({ activeSessionId: activeStatuses.includes(session.status) ? session.sessionId : null });
+  await broadcastState(session);
 }
 
-async function createDraft(metadata) {
+async function createDraft(metadata: SessionRecord['metadata']): Promise<SessionRecord> {
   const tab = await getActiveTab();
   const sessionId = uuid();
   const now = Date.now();
-  const session = {
+  const session: SessionRecord = {
     sessionId,
     createdAt: now,
     updatedAt: now,
@@ -60,16 +74,13 @@ async function createDraft(metadata) {
     recovered: false,
     recordingStartedAt: null
   };
+
   await put(stores.drafts, { draftId: sessionId, metadata, updatedAt: now });
   await saveSession(session);
   return session;
 }
 
-async function getTabMediaStreamId(tabId) {
-  return chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
-}
-
-async function startSession(sessionId, startPayload = {}) {
+async function startSession(sessionId: string, startPayload: { micDeviceId?: string } = {}): Promise<SessionRecord> {
   let session = await getSession(sessionId);
   if (!session) throw new Error('Session not found');
   if (activeSessionId && activeSessionId !== sessionId) throw new Error('Another session is already active');
@@ -81,24 +92,17 @@ async function startSession(sessionId, startPayload = {}) {
   const tab = await getActiveTab();
   if (!tab?.id) throw new Error('No active tab found for capture');
 
-  session = {
-    ...session,
-    activeTabId: tab.id,
-    tabTitle: tab.title || session.tabTitle,
-    tabUrl: tab.url || session.tabUrl
-  };
-
+  session = { ...session, activeTabId: tab.id, tabTitle: tab.title || session.tabTitle, tabUrl: tab.url || session.tabUrl };
   const preparing = transition(session, SessionStatus.PREPARING);
   await saveSession(preparing);
-  activeSessionId = sessionId;
 
-  const tabStreamId = await getTabMediaStreamId(tab.id);
+  const tabStreamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
   await ensureOffscreenDocument();
-
-  await chrome.runtime.sendMessage({
+  const response = await chrome.runtime.sendMessage({
     type: Msg.OFFSCREEN_START_CAPTURE,
     sessionId,
     payload: {
+      sessionId,
       tabStreamId,
       micDeviceId: preparing.audio.micDeviceId,
       muted: preparing.audio.muted,
@@ -107,10 +111,17 @@ async function startSession(sessionId, startPayload = {}) {
     }
   });
 
+  if (!response?.ok) {
+    const failed = transition(preparing, SessionStatus.ERROR, { error: response?.error || 'Failed to start offscreen capture' });
+    await saveSession(failed);
+    throw new Error(failed.error || 'Failed to start');
+  }
+
+  activeSessionId = sessionId;
   return preparing;
 }
 
-async function stopSession(sessionId) {
+async function stopSession(sessionId: string): Promise<SessionRecord> {
   const session = await getSession(sessionId);
   if (!session) throw new Error('Session not found');
   const stopping = transition(session, SessionStatus.STOPPING);
@@ -119,8 +130,10 @@ async function stopSession(sessionId) {
   return stopping;
 }
 
-async function finalizeAndExport(sessionId) {
+async function finalizeAndExport(sessionId: string): Promise<void> {
   let session = await getSession(sessionId);
+  if (!session) return;
+
   session = transition(session, SessionStatus.FINALIZING);
   await saveSession(session);
 
@@ -140,6 +153,7 @@ async function finalizeAndExport(sessionId) {
 
   session = transition(session, SessionStatus.EXPORTING);
   await saveSession(session);
+
   await provider.init(session);
   const result = await provider.finalize(sessionId, manifest);
 
@@ -148,14 +162,11 @@ async function finalizeAndExport(sessionId) {
   activeSessionId = null;
 }
 
-async function recoverSessions() {
-  const sessions = await getAll(stores.sessions);
+async function recoverSessions(): Promise<void> {
+  const sessions = await getAll<SessionRecord>(stores.sessions);
   for (const session of sessions) {
-    if ([SessionStatus.RECORDING, SessionStatus.PAUSED, SessionStatus.STOPPING].includes(session.status)) {
-      const errored = transition(session, SessionStatus.ERROR, {
-        error: 'Unexpected termination; partial saved',
-        recovered: true
-      });
+    if (([SessionStatus.RECORDING, SessionStatus.PAUSED, SessionStatus.STOPPING] as string[]).includes(session.status)) {
+      const errored = transition(session, SessionStatus.ERROR, { error: 'Unexpected termination; partial saved', recovered: true });
       await saveSession(errored);
     }
 
@@ -166,13 +177,13 @@ async function recoverSessions() {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  recoverSessions().catch(console.error);
+  void recoverSessions();
 });
 chrome.runtime.onStartup.addListener(() => {
-  recoverSessions().catch(console.error);
+  void recoverSessions();
 });
 
-chrome.commands.onCommand.addListener(async (command) => {
+chrome.commands.onCommand.addListener(async (command: string) => {
   if (command !== 'add-annotation') return;
   const session = activeSessionId ? await getSession(activeSessionId) : null;
   if (!session || session.status !== SessionStatus.RECORDING) return;
@@ -181,11 +192,11 @@ chrome.commands.onCommand.addListener(async (command) => {
   await chrome.tabs.sendMessage(tab.id, { type: 'ANNOTATION_PROMPT', sessionId: session.sessionId });
 });
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg: any, _sender: any, sendResponse: any) => {
   (async () => {
     switch (msg.type) {
       case Msg.POPUP_GET_STATUS: {
-        const sessions = await getAll(stores.sessions);
+        const sessions = await getAll<SessionRecord>(stores.sessions);
         const current = sessions.sort((a, b) => b.updatedAt - a.updatedAt)[0] || null;
         sendResponse({ ok: true, session: current });
         break;
@@ -198,25 +209,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case Msg.SESSION_UPDATE_METADATA: {
         const session = await getSession(msg.sessionId);
         if (!session) throw new Error('Session not found');
-        const updated = { ...session, metadata: msg.payload.metadata, updatedAt: Date.now() };
+        const updated: SessionRecord = { ...session, metadata: msg.payload.metadata, updatedAt: Date.now() };
         await saveSession(updated);
         await put(stores.drafts, { draftId: session.sessionId, metadata: updated.metadata, updatedAt: Date.now() });
         sendResponse({ ok: true, session: updated });
         break;
       }
-      case Msg.SESSION_START_REQUEST: {
-        const session = await startSession(msg.sessionId, msg.payload || {});
-        sendResponse({ ok: true, session });
+      case Msg.SESSION_START_REQUEST:
+        sendResponse({ ok: true, session: await startSession(msg.sessionId, msg.payload || {}) });
         break;
-      }
-      case Msg.SESSION_STOP_REQUEST: {
-        const session = await stopSession(msg.sessionId);
-        sendResponse({ ok: true, session });
+      case Msg.SESSION_STOP_REQUEST:
+        sendResponse({ ok: true, session: await stopSession(msg.sessionId) });
         break;
-      }
       case Msg.SESSION_PAUSE_REQUEST: {
         await chrome.runtime.sendMessage({ type: Msg.OFFSCREEN_PAUSE, sessionId: msg.sessionId, payload: {} });
         const session = await getSession(msg.sessionId);
+        if (!session) throw new Error('Session not found');
         const updated = transition(session, SessionStatus.PAUSED);
         await saveSession(updated);
         sendResponse({ ok: true, session: updated });
@@ -225,6 +233,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case Msg.SESSION_RESUME_REQUEST: {
         await chrome.runtime.sendMessage({ type: Msg.OFFSCREEN_RESUME, sessionId: msg.sessionId, payload: {} });
         const session = await getSession(msg.sessionId);
+        if (!session) throw new Error('Session not found');
         const updated = transition(session, SessionStatus.RECORDING);
         await saveSession(updated);
         sendResponse({ ok: true, session: updated });
@@ -233,7 +242,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case Msg.ANNOTATION_ADD: {
         const session = await getSession(msg.sessionId);
         if (!session) throw new Error('Session not found');
-        await put(stores.annotations, {
+        const annotation: AnnotationRecord = {
           annotationId: uuid(),
           sessionId: msg.sessionId,
           tsMs: msg.payload.tsMs,
@@ -241,12 +250,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           text: msg.payload.text,
           url: msg.payload.url,
           tabTitle: msg.payload.tabTitle
-        });
+        };
+        await put(stores.annotations, annotation);
         sendResponse({ ok: true });
         break;
       }
       case Msg.RECORDING_STARTED: {
         const session = await getSession(msg.sessionId);
+        if (!session) throw new Error('Session not found');
         const updated = transition(session, SessionStatus.RECORDING, { recordingStartedAt: Date.now() });
         await saveSession(updated);
         sendResponse({ ok: true });
@@ -255,17 +266,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case Msg.RECORDING_CHUNK: {
         const session = await getSession(msg.sessionId);
         if (!session) throw new Error('Session not found');
-        const { chunkIndex, blob, ts } = msg.payload;
-        await put(stores.chunks, { sessionId: msg.sessionId, chunkIndex, blob, ts, size: blob.size });
 
-        const bytesRecorded = session.stats.bytesRecorded + blob.size;
+        const { chunkIndex, bytes, ts, mimeType, size } = msg.payload as {
+          chunkIndex: number;
+          bytes: ArrayBuffer;
+          ts: number;
+          mimeType?: string;
+          size?: number;
+        };
+
+        const blob = new Blob([bytes], { type: mimeType || session.video.mimeType || 'video/webm' });
+        const chunk: ChunkRecord = { sessionId: msg.sessionId, chunkIndex, blob, ts, size: size || blob.size };
+        await put(stores.chunks, chunk);
+
+        const bytesRecorded = session.stats.bytesRecorded + chunk.size;
         const chunkCount = session.stats.chunkCount + 1;
         const durationMsApprox = chunkCount * session.video.chunkMs;
-        let updated = {
-          ...session,
-          stats: { chunkCount, bytesRecorded, durationMsApprox },
-          updatedAt: Date.now()
-        };
+        let updated: SessionRecord = { ...session, stats: { chunkCount, bytesRecorded, durationMsApprox }, updatedAt: Date.now() };
 
         if (bytesRecorded >= WARN_LOCAL_BYTES && !updated.warnedStorage) updated.warnedStorage = true;
 
@@ -280,13 +297,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       }
-      case Msg.RECORDING_STOPPED: {
+      case Msg.RECORDING_STOPPED:
         await finalizeAndExport(msg.sessionId);
         sendResponse({ ok: true });
         break;
-      }
       case Msg.RECORDING_ERROR: {
         const session = await getSession(msg.sessionId);
+        if (!session) throw new Error('Session not found');
         const updated = transition(session, SessionStatus.ERROR, { error: msg.payload?.error || 'Unknown recording error' });
         await saveSession(updated);
         activeSessionId = null;
@@ -299,7 +316,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       default:
         sendResponse({ ok: false, error: `Unhandled message ${msg.type}` });
     }
-  })().catch((err) => sendResponse({ ok: false, error: err.message || String(err) }));
+  })().catch((err) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
 
   return true;
 });
