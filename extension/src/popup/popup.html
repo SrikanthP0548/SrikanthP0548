@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Logix Recorder</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main>
+    <h1>Logix Recorder</h1>
+    <section id="tabInfo"></section>
+
+    <form id="metaForm">
+      <label>Title <input id="title" minlength="5" maxlength="200" required /></label>
+      <label>Description <textarea id="description" minlength="20" maxlength="1000" required></textarea></label>
+      <label>Tags (comma-separated) <input id="tags" placeholder="checkout,payment-flow" required /></label>
+      <label>Related Components <input id="relatedComponents" /></label>
+      <label>Related Files <input id="relatedFiles" /></label>
+      <label>Microphone
+        <select id="micDevice"></select>
+      </label>
+    </form>
+
+    <div id="status"></div>
+    <div id="recoveryNotice"></div>
+    <div id="stats"></div>
+
+    <div class="actions">
+      <button id="startBtn" type="button" disabled>Start Recording</button>
+      <button id="pauseBtn" type="button" hidden>Pause</button>
+      <button id="resumeBtn" type="button" hidden>Resume</button>
+      <button id="stopBtn" type="button" hidden>Stop</button>
+    </div>
+  </main>
+  <script type="module" src="../../dist/popup/popup.js"></script>
+</body>
+</html>
