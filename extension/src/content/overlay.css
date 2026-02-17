@@ -1,0 +1,12 @@
+#logix-recording-badge {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 2147483647;
+  background: rgba(211, 47, 47, 0.95);
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font: 12px/1 Arial, sans-serif;
+  display: none;
+}

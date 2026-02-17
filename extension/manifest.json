@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "Logix MVP Video Recorder",
+  "version": "1.0.0",
+  "description": "Record active tab + microphone with chunked persistence, annotations, and export.",
+  "permissions": [
+    "tabCapture",
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs",
+    "downloads",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Logix Recorder"
+  },
+  "background": {
+    "service_worker": "src/sw/service_worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/content.js"],
+      "css": ["src/content/overlay.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "add-annotation": {
+      "suggested_key": {
+        "default": "Alt+Shift+A"
+      },
+      "description": "Add annotation while recording"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["src/content/overlay.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
