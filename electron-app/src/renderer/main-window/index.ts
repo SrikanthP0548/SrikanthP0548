@@ -38,30 +38,42 @@ let durationSec = 0;
 
 // ─── Source picker ────────────────────────────────────────
 async function loadSources(): Promise<void> {
-  const sources = await window.logix.getSources();
-  sourceList.innerHTML = '';
+  sourceList.innerHTML = '<p style="color:#aaa;font-size:12px;grid-column:1/-1;">Loading sources…</p>';
   selectedSourceId = null;
   updateStartBtn();
 
-  for (const src of sources) {
-    const div = document.createElement('div');
-    div.className = 'source-item';
-    div.dataset.sourceId = src.id;
-    div.innerHTML = `<img src="${src.thumbnailDataUrl}" /><span>${src.name}</span>`;
-    div.addEventListener('click', () => {
-      document.querySelectorAll('.source-item').forEach((el) => el.classList.remove('selected'));
-      div.classList.add('selected');
-      selectedSourceId = src.id;
-      updateStartBtn();
-    });
-    sourceList.appendChild(div);
+  try {
+    const sources = await window.logix.getSources();
+    sourceList.innerHTML = '';
+
+    if (sources.length === 0) {
+      sourceList.innerHTML = '<p style="color:#e94560;font-size:12px;grid-column:1/-1;">No sources found. Click Refresh to try again.</p>';
+      return;
+    }
+
+    for (const src of sources) {
+      const div = document.createElement('div');
+      div.className = 'source-item';
+      div.dataset.sourceId = src.id;
+      div.innerHTML = `<img src="${src.thumbnailDataUrl}" /><span>${src.name}</span>`;
+      div.addEventListener('click', () => {
+        document.querySelectorAll('.source-item').forEach((el) => el.classList.remove('selected'));
+        div.classList.add('selected');
+        selectedSourceId = src.id;
+        updateStartBtn();
+      });
+      sourceList.appendChild(div);
+    }
+  } catch (err: any) {
+    console.error('Failed to load sources:', err);
+    sourceList.innerHTML = `<p style="color:#e94560;font-size:12px;grid-column:1/-1;">Failed to load sources: ${err.message || err}</p>`;
   }
 }
 
 // ─── Mic picker ───────────────────────────────────────────
 async function loadMics(): Promise<void> {
   try {
-    // Need permission first
+    // Request permission first — required to get device labels
     const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     tempStream.getTracks().forEach((t) => t.stop());
 
@@ -74,10 +86,11 @@ async function loadMics(): Promise<void> {
       opt.textContent = mic.label || `Mic ${mic.deviceId.slice(0, 8)}`;
       micSelect.appendChild(opt);
     }
-    // Select default
+    // Auto-select first real microphone
     if (mics.length > 0) micSelect.value = mics[0].deviceId;
-  } catch {
-    // No mic permission — that's fine
+  } catch (err: any) {
+    console.warn('Microphone enumeration failed:', err.message || err);
+    micSelect.innerHTML = '<option value="">Mic unavailable — permission denied</option>';
   }
 }
 

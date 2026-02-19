@@ -293,9 +293,18 @@ ipcMain.on(IPC.TOOLBAR_ACTION, async (_event, action: string) => {
 // ─── App lifecycle ───────────────────────────────────────
 
 app.whenReady().then(() => {
-  // Grant screen capture permission automatically
+  // Grant media permissions (microphone, screen capture) automatically
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    const allowed = ['media', 'mediaKeySystem', 'display-capture', 'screen'];
+    callback(allowed.includes(permission));
+  });
+
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    const allowed = ['media', 'mediaKeySystem', 'display-capture', 'screen'];
+    return allowed.includes(permission);
+  });
+
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
-    // Allow all display media requests from our app
     callback({ video: undefined as any });
   });
 
