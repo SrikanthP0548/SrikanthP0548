@@ -1,0 +1,124 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  padding: 20px;
+  user-select: none;
+}
+
+h2 {
+  font-size: 18px;
+  margin-bottom: 16px;
+  color: #fff;
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #aaa;
+  margin: 12px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+input, textarea, select {
+  width: 100%;
+  padding: 8px 10px;
+  background: #16213e;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: #e94560;
+}
+textarea { resize: vertical; }
+
+.source-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 6px 0;
+}
+
+.source-item {
+  border: 2px solid transparent;
+  border-radius: 6px;
+  padding: 4px;
+  cursor: pointer;
+  text-align: center;
+  background: #16213e;
+  transition: border-color 0.15s;
+}
+.source-item:hover { border-color: #555; }
+.source-item.selected { border-color: #e94560; }
+.source-item img {
+  width: 100%;
+  border-radius: 4px;
+  pointer-events: none;
+}
+.source-item span {
+  display: block;
+  font-size: 11px;
+  color: #aaa;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-primary, .btn-secondary, .btn-danger {
+  display: inline-block;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 12px;
+  transition: opacity 0.15s;
+}
+.btn-primary {
+  background: #e94560;
+  color: #fff;
+  width: 100%;
+}
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-secondary {
+  background: #333;
+  color: #e0e0e0;
+}
+.btn-danger {
+  background: #c0392b;
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled),
+.btn-secondary:hover,
+.btn-danger:hover { opacity: 0.85; }
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.btn-row button { flex: 1; margin-top: 0; }
+
+.error {
+  color: #e94560;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+#rec-status { font-size: 14px; margin-bottom: 4px; }
+#completed-screen p { margin: 8px 0 16px; font-size: 13px; color: #aaa; word-break: break-all; }

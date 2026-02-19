@@ -1,0 +1,90 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(20, 20, 36, 0.95);
+  border-radius: 0 0 12px 12px;
+  padding: 6px 14px;
+  height: 42px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  -webkit-app-region: drag;
+}
+
+.rec-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rec-dot {
+  width: 10px;
+  height: 10px;
+  background: #e94560;
+  border-radius: 50%;
+  animation: blink 1s ease-in-out infinite;
+}
+
+.rec-dot.paused {
+  animation: none;
+  background: #f39c12;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+#timer {
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 14px;
+  color: #fff;
+  min-width: 48px;
+}
+
+.separator {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.15);
+  margin: 0 2px;
+}
+
+.tool-btn {
+  -webkit-app-region: no-drag;
+  background: transparent;
+  border: none;
+  color: #ccc;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tool-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.tool-btn.muted {
+  color: #e94560;
+}
+
+.stop-btn {
+  color: #e94560;
+}
+.stop-btn:hover {
+  background: rgba(233, 69, 96, 0.2);
+  color: #ff6b81;
+}

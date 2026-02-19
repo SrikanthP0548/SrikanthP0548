@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' mediastream:" />
+  <title>Logix Recorder</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Setup Screen -->
+  <div id="setup-screen">
+    <h2>Logix Recorder</h2>
+
+    <label for="title-input">Title</label>
+    <input id="title-input" type="text" placeholder="Recording title" maxlength="200" />
+
+    <label for="desc-input">Description</label>
+    <textarea id="desc-input" rows="3" placeholder="Brief description of what you're recording" maxlength="1000"></textarea>
+
+    <label>Select Screen or Window</label>
+    <div id="source-list" class="source-grid"></div>
+    <button id="refresh-sources" class="btn-secondary">Refresh Sources</button>
+
+    <label for="mic-select">Microphone</label>
+    <select id="mic-select">
+      <option value="">No microphone</option>
+    </select>
+
+    <button id="start-btn" class="btn-primary" disabled>Start Recording</button>
+    <div id="error-msg" class="error" hidden></div>
+  </div>
+
+  <!-- Recording Screen (hidden while recording — main window is minimized) -->
+  <div id="recording-screen" hidden>
+    <h2>Recording in Progress</h2>
+    <p id="rec-status">Status: <span id="status-text">—</span></p>
+    <p>Duration: <span id="duration-text">0s</span></p>
+    <p>Chunks: <span id="chunks-text">0</span> &middot; Size: <span id="size-text">0 KB</span></p>
+    <div class="btn-row">
+      <button id="pause-btn" class="btn-secondary">Pause</button>
+      <button id="resume-btn" class="btn-secondary" hidden>Resume</button>
+      <button id="stop-btn" class="btn-danger">Stop</button>
+      <button id="mute-btn" class="btn-secondary">Mute Mic</button>
+    </div>
+  </div>
+
+  <!-- Completed Screen -->
+  <div id="completed-screen" hidden>
+    <h2>Recording Saved</h2>
+    <p id="saved-path"></p>
+    <button id="new-btn" class="btn-primary">New Recording</button>
+  </div>
+
+  <script src="../../../dist/renderer/main-window/index.js"></script>
+</body>
+</html>

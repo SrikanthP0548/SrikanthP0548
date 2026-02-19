@@ -1,0 +1,15 @@
+{
+  "name": "logix-recorder",
+  "version": "1.0.0",
+  "description": "Screen recorder desktop app with floating toolbar",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && electron .",
+    "dev": "tsc -p tsconfig.json && electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "typescript": "^5.9.3"
+  }
+}
